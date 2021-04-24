@@ -98,7 +98,94 @@ app.post('/api', async function (req, res) {
                 }).pipe(res);
                 return;
             }
-            if (type == "video-and-audio-slow") {
+            if (type == "video-and-audio-kinda-slow") {
+                var audioFormat = ytdl.chooseFormat(videoInfo.formats, { filter: "audioonly", quality: "highest" }).container;
+                var videoFormat = ytdl.chooseFormat(videoInfo.formats, { filter: "videoonly", quality: "highest" }).container;
+
+                var hqAudio = await ytdl(link, {
+                    quality: "highestaudio",
+                    filter: "audioonly",
+                }).on('progress', function (_, DLed, total) {
+                    if (requesteeUUID) {
+                        let user = idMap.get(requesteeUUID);
+                        user.currentDownloadProgress = `Downloading Audio: ${(DLed / 1024 / 1024).toPrecision(4)}MB out of ${(total / 1024 / 1024).toPrecision(4)}MB`;
+                        idMap.set(requesteeUUID, user);
+                    }
+                });
+                var hqVideo = await ytdl(link, {
+                    quality: "highestvideo",
+                    filter: "videoonly",
+                }).on('progress', function (_, DLed, total) {
+                    if (requesteeUUID) {
+                        let user = idMap.get(requesteeUUID);
+                        user.currentDownloadProgress = `Downloading Video: ${(DLed / 1024 / 1024).toPrecision(4)}MB out of ${(total / 1024 / 1024).toPrecision(4)}MB`;
+                        idMap.set(requesteeUUID, user);
+                    }
+                });
+
+                var dateTime = new Date().getTime().toString();
+                var videoPath = `./temp/${dateTime}-${videoName}-video.${videoFormat}`;
+                var audioPath = `./temp/${dateTime}-${videoName}-audio.${audioFormat}`;
+
+                await ytdlWriteFilePromise(hqVideo, videoPath);
+                await ytdlWriteFilePromise(hqAudio, audioPath);
+
+                var goodVideoSize = await goodFileSize(videoPath);
+                var goodAudioSize = await goodFileSize(audioPath);
+
+
+
+                if (!(goodVideoSize) || !(goodAudioSize)) {
+                    console.log("Encountered too large of a file", goodVideoSize, goodAudioSize);
+                    deleteFile(audioPath);
+                    deleteFile(videoPath);
+                    throw "Either your video or audio is too large, please choose a shorter/smaller video!"
+                }
+
+                res.set("File-Format", "mkv");
+
+                let command2 = ffmpeg();
+                command2
+                    .input(audioPath)
+                    .input(videoPath)
+                    .withVideoCodec("copy")
+                    .withAudioCodec("copy")
+                    //.withOptions(["-flags +global_header", "-movflags frag_keyframe+faststart"])
+                    .format("matroska")
+                    .on('start', function () {
+                        if (idMap.get(requesteeUUID)) {
+                            let user = idMap.get(requesteeUUID);
+                            user.currentDownloadProgress = "Started combining audio + video";
+                            idMap.set(requesteeUUID, user);
+                        }
+                    })
+                    .on('error', function(err) {
+                        console.log('An error occurred: ' + err.message);
+                        deleteFile(audioPath);
+                        deleteFile(videoPath);
+
+                        if (idMap.get(requesteeUUID)) {
+                            let user = idMap.get(requesteeUUID);
+                            user.currentDownloadProgress = `An error occurred with ffmpeg, please try again. If the problem persists, don't try again.`;
+                            idMap.set(requesteeUUID, user);
+                        }
+                    })
+                    .on('end', function() {
+                        console.log('Processing finished!');
+                        deleteFile(audioPath);
+                        deleteFile(videoPath);
+                    })
+                    .on('progress', function (progress) {
+                        if (idMap.get(requesteeUUID)) {
+                            let user = idMap.get(requesteeUUID);
+                            user.currentDownloadProgress = `Frames: ${progress.frames}. Current FPS: ${progress.currentFps}. Current Kbps: ${progress.currentKbps}. Target Size: ${progress.targetSize}. Timemark: ${progress.timemark}, Percent: ${Math.round(progress.percent)}.`;
+                            idMap.set(requesteeUUID, user);
+                        }
+                    })
+                    .pipe(res);
+                return;
+            }
+            if (type == "video-and-audio-very-slow") {
                 var audioFormat = ytdl.chooseFormat(videoInfo.formats, { filter: "audioonly", quality: "highest" }).container;
                 var videoFormat = ytdl.chooseFormat(videoInfo.formats, { filter: "videoonly", quality: "highest" }).container;
 
@@ -245,7 +332,7 @@ async function goodFileSize (path) {
     });
 }
 
-const server = app.listen(8081, () => console.log("server is up"));
+const server = app.listen(8081, () => console.log(`Server is up`));
 server.on('upgrade', (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, socket => {
         wsServer.emit('connection', socket, request);

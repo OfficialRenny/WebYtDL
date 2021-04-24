@@ -22,7 +22,8 @@
             <option selected label="MP3 Only" value="audio-only">MP3 Only</option>
             <option label="Video Only" value="video-only">Video Only</option>
             <option label="Video + Audio (Low Quality But Quick)" value="video-and-audio-fast">Video + Audio (Low Quality But Quick)</option>
-            <option label="Video + Audio (High Quality But Slow)" value="video-and-audio-slow">Video + Audio (High Quality But Slow)</option>
+            <option label="Video + Audio MKV (High Quality But Kinda Slow)" value="video-and-audio-kinda-slow">Video + Audio MKV (High Quality But Kinda Slow)</option>
+            <option label="Video + Audio MP4 (High Quality But Very Slow)" value="video-and-audio-very-slow">Video + Audio MP4 (High Quality But Very Slow)</option>
         </select>
         <div id="ytdl-go" class="button">Go</div>
     </div>
@@ -32,7 +33,6 @@
     <script>
         var wsClient = new WebSocket('ws://localhost:8081');
         var sessionUUID;
-        var counter = 0;
         var downloadInProgress = false;
 
         wsClient.onmessage = (msg) => {
@@ -48,7 +48,6 @@
                         $(".message-box").show();
                     }
                 }
-                if (msgBody.action == "uuid-test") console.log(msgBody.uuid);
             } catch (ex) {
                 console.log("Error with message from server", ex)
             }
@@ -59,8 +58,8 @@
 
             var ytLink = $("#ytdl-input").val();
             var mediaType = $("#ytdl-mediatype").find(":selected").val();
-           
-           downloadInProgress = true;
+
+            downloadInProgress = true;
 
 
             var downloadInterval = setInterval(function () {
@@ -79,10 +78,12 @@
                 }
 
                 if (res.status == 200) {
+                    var fileName = res.headers.get("File-Name");
+                    if (res.headers.get("File-Format")) fileName += `.${res.headers.get("File-Format")}`;
 
-                    const fileStream = streamSaver.createWriteStream(res.headers.get("File-Name"));
+                    const fileStream = streamSaver.createWriteStream(fileName);
                     const readableStream = res.body;
-                    // more optimized
+
                     if (window.WritableStream && readableStream.pipeTo) {
                       return readableStream.pipeTo(fileStream)
                         .then(function () {
@@ -100,7 +101,6 @@
                               console.log("Finished downloading.");
                               writer.close();
                           } else {
-                            //if (counter % 10 == 0) wsClient.send("Still downloading.");
                             writer.write(res.value).then(pump);
                           }
                         });
@@ -110,21 +110,19 @@
         });
 
         async function postData(url = '', data = {}) {
-            // Default options are marked with *
             const response = await fetch(url, {
-                 method: 'POST', // *GET, POST, PUT, DELETE, etc.
-                 mode: 'cors', // no-cors, *cors, same-origin
-                 cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
-                 credentials: 'same-origin', // include, *same-origin, omit
+                 method: 'POST',
+                 mode: 'cors',
+                 cache: 'no-cache',
+                 credentials: 'same-origin',
                  headers: {
                    'Content-Type': 'application/json'
-                   // 'Content-Type': 'application/x-www-form-urlencoded',
                  },
-                 redirect: 'follow', // manual, *follow, error
-                 referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-                 body: JSON.stringify(data) // body data type must match "Content-Type" header
+                 redirect: 'follow',
+                 referrerPolicy: 'no-referrer',
+                 body: JSON.stringify(data),
             });
-            return response; // parses JSON response into native JavaScript objects
+            return response;
         }
 
         function stringify(thisObj) {
